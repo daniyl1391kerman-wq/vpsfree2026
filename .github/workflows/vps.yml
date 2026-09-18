@@ -1,4 +1,4 @@
-name: Windows Cloud RDP & SSH
+name: Windows Cloud RDP
 
 on:
   workflow_dispatch:
@@ -9,68 +9,47 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. Enable Remote Desktop, SSH & Firewall
+      - name: 1. Enable Remote Desktop & Firewall
         run: |
-          # فعال‌سازی RDP
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-          
-          # نصب و فعال‌سازی سرویس OpenSSH برای دسترسی SSH
-          Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue
-          Start-Service sshd
-          Set-Service -Name sshd -StartupType 'Automatic'
-          Enable-NetFirewallRule -Name "OpenSSH-Server-In-TCP"
 
-      - name: 2. Disable Password Complexity & Create Accounts
+      - name: 2. Create Admin Account
         run: |
-          # خروجی گرفتن از سیاست‌های فعلی رمز عبور
-          secedit /export /cfg c:\secpol.cfg
-          
-          # تغییر تنظیمات برای پذیرش رمزهای ساده مثل 123
-          (Get-Content c:\secpol.cfg) -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0' -replace 'MinimumPasswordLength = 8', 'MinimumPasswordLength = 0' | Out-File c:\secpol.cfg -Encoding ascii
-          
-          # اعمال سیاست جدید بدون نیاز به ریستارت
-          secedit /configure /db $env:windir\security\local.sdb /cfg c:\secpol.cfg /areas SECURITYPOLICY
-          
-          # ساخت پسورد ساده 123
-          $Password = ConvertTo-SecureString "123" -AsPlainText -Force
-          
-          # تنظیم رمز عبور runneradmin به 123
-          net user runneradmin 123
-          
-          # ساخت کاربر root با رمز 123 و دسترسی ادمین
-          New-LocalUser -Name "root" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
-          Add-LocalGroupMember -Group "Administrators" -Member "root" -ErrorAction SilentlyContinue
+          $Password = ConvertTo-SecureString "P@ssw0rd1qazXSW@#" -AsPlainText -Force
+          New-LocalUser -Name "NvDAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Administrators" -Member "NvDAdmin" -ErrorAction SilentlyContinue
+          net user runneradmin P@ssw0rd1qazXSW@#
 
       - name: 3. Install & Connect Tailscale VPN
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
-          Invoke-WebRequest "https://tailscale.com" -OutFile "C:\tailscale.msi"
+          # Download and install Tailscale silently
+          Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile "C:\tailscale.msi"
           Start-Process msiexec -ArgumentList "/i C:\tailscale.msi /quiet /norestart" -Wait
 
+          # Connect to Tailscale network
           Start-Sleep -Seconds 5
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$Env:TAILSCALE_AUTHKEY" --hostname="github-windows-server"
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$Env:TAILSCALE_AUTHKEY" --hostname="github-rdp-server"
 
           Start-Sleep -Seconds 8
+
+          # Get Tailscale IP
           $ts_ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
 
           Write-Host "====================================================" -ForegroundColor Green
-          Write-Host " >>> SERVER IS READY! <<<" -ForegroundColor Cyan
+          Write-Host " >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
           Write-Host " Tailscale IP : $ts_ip" -ForegroundColor Yellow
-          Write-Host " Username 1   : runneradmin" -ForegroundColor Yellow
-          Write-Host " Username 2   : root" -ForegroundColor Yellow
-          Write-Host " Password     : 123" -ForegroundColor Yellow
-          Write-Host " --------------------------------------------------"
-          Write-Host " >> For RDP: Open mstsc and connect to: $ts_ip" -ForegroundColor Magenta
-          Write-Host " >> For SSH: run 'ssh root@$ts_ip' or 'ssh runneradmin@$ts_ip'" -ForegroundColor Magenta
+          Write-Host " Username     : NvDadmin" -ForegroundColor Yellow
+          Write-Host " Password     : P@ssw0rd1qazXSW@#" -ForegroundColor Yellow
+          Write-Host " >> Open mstsc and connect to: $ts_ip" -ForegroundColor Magenta
           Write-Host "====================================================" -ForegroundColor Green
 
-      - name: 4. Keep Server Alive Safely (Max 6 Hours)
+      - name: 4. Keep Server Alive (48 Hours)
         run: |
-          for ($i = 1; $i -le 350; $i++) {
+          for ($i = 1; $i -le 2880; $i++) {
             Start-Sleep -Seconds 60
-            Get-Process | Select-Object -First 1 | Out-Null
-            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Server is active. Minute: $i/350" -ForegroundColor Gray
+            Write-Host "[$i/2880] Server running..."
           }
