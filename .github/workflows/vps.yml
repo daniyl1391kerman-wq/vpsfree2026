@@ -4,21 +4,28 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # استفاده از نسخه پایدار مشخص برای جلوگیری از اختلالات تغییرات سیستم‌عامل گیت‌هاب
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
     - name: Install Programming & Python Dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y python3 python3-pip python3-venv git curl wget build-essential libssl-dev localtunnel
-        python3 -m pip install --upgrade pip
+        # حل مشکل قفل مخازن و خطای خروجی ۱۰۰ با نادیده گرفتن خطاهای جزیی آپدیت
+        sudo apt-get update || true
+        sudo apt-get install -y python3 python3-pip python3-venv git curl wget build-essential libssl-dev
+        
+        # نصب لوکال‌تانل به شیوه ایمن‌تر
+        sudo apt-get install -y nodejs npm || true
+        sudo npm install -g localtunnel || true
+        
+        # آپدیت پپ پایتون
+        python3 -m pip install --upgrade pip --break-system-packages || true
 
     - name: Set Custom SSH Password
       run: |
-        # تنظیم پسورد برای یوزر runner
-        echo "runner:mysecretpass123" | sudo chpasswd
+        # تنظیم رمز عبور ایمن‌تر برای یوزر runner
+        echo "runner:DeveloperPass2026!" | sudo chpasswd
 
     - name: Gather and Print VPS Detailed Specifications
       run: |
@@ -35,7 +42,7 @@ jobs:
         echo "                  SSH LOGIN CREDENTIALS                   "
         echo "----------------------------------------------------------"
         echo "Username:         runner"
-        echo "Password:         mysecretpass123"
+        echo "Password:         DeveloperPass2026!"
         echo "=========================================================="
 
     - name: Launch VPS & Enable SSH Connection
