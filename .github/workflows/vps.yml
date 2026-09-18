@@ -1,56 +1,36 @@
-name: Super Fast RDP & SSH VPS
+name: Super Fast Python VPS
 on: 
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest # استفاده از آخرین نسخه برای حداکثر سرعت در استارت
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Fast Install Python & RDP Desktop
+    - name: Fast Install Python & PIP
       run: |
-        sudo apt-get update
-        # نصب سریع محیط گرافیکی سبک و پایتون
-        sudo apt-get install -y xfce4 xfce4-goodies xrdp python3 python3-pip python3-venv wget curl
-        # تنظیم محیط گرافیکی پیش‌فرض برای RDP
-        echo "xfce4-session" > ~/.xsession
-        sudo systemctl enable xrdp
-        sudo systemctl start xrdp
+        sudo apt-get update -y
+        sudo apt-get install -y python3 python3-pip python3-venv wget curl
+        python3 -m pip install --upgrade pip --break-system-packages || true
 
-    - name: Set RDP & SSH Password
+    - name: Set SSH Password
       run: |
-        # تنظیم پسورد برای یوزر runner
+        # تنظیم رمز عبور برای یوزر runner
         echo "runner:DeveloperPass2026!" | sudo chpasswd
 
-    - name: Setup Ngrok Tunnel for RDP & SSH
-      env:
-        NGROK_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Get Public IP & Show Credentials
       run: |
-        # دانلود و نصب سریع نگروک
-        wget -q https://equinox.io
-        tar -xf ngrok-v3-stable-linux-amd64.tgz
-        chmod +x ngrok
-        ./ngrok config add-authtoken "$NGROK_TOKEN"
-        
-        # استارت تونل برای پورت RDP (پورت 3389)
-        ./ngrok tcp 3389 --log=stdout > /dev/null &
-        sleep 5
-        
-        # استخراج آی‌پای و پورت اختصاصی اتصال
         echo "=========================================================="
-        echo "              RDP & SSH VPS CONNECTION INFO               "
+        echo "              VPS SUCCESSFUL STARTUP INFO                 "
         echo "=========================================================="
         echo "Python Version:  $(python3 --version)"
+        echo "Public IP:       $(curl -s https://ifconfig.me || curl -s https://ipinfo.io || echo 'Check inside server')"
         echo "Username:        runner"
         echo "Password:        DeveloperPass2026!"
-        echo "----------------------------------------------------------"
-        echo "How to connect via Remote Desktop (RDP):"
-        curl -s http://localhost:4040/api/tunnels | python3 -c "import sys, json; print('Address: ' + json.load(sys.stdin)['tunnels'][0]['public_url'].replace('tcp://', ''))"
         echo "=========================================================="
 
-    - name: Keep VPS Alive
-      run: |
-        # باز نگه داشتن سرور تا حداکثر زمان مجاز
-        sleep 21000
+    - name: Launch VPS & Enable SSH Connection
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 350
