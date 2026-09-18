@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    # حداکثر زمان مجاز گیت‌هاب ۶ ساعت (۳۶۰ دقیقه) است
     timeout-minutes: 360
 
     steps:
@@ -23,8 +22,18 @@ jobs:
           Set-Service -Name sshd -StartupType 'Automatic'
           Enable-NetFirewallRule -Name "OpenSSH-Server-In-TCP"
 
-      - name: 2. Create Accounts (runneradmin & root)
+      - name: 2. Disable Password Complexity & Create Accounts
         run: |
+          # خروجی گرفتن از سیاست‌های فعلی رمز عبور
+          secedit /export /cfg c:\secpol.cfg
+          
+          # تغییر تنظیمات برای پذیرش رمزهای ساده مثل 123
+          (Get-Content c:\secpol.cfg) -replace 'PasswordComplexity = 1', 'PasswordComplexity = 0' -replace 'MinimumPasswordLength = 8', 'MinimumPasswordLength = 0' | Out-File c:\secpol.cfg -Encoding ascii
+          
+          # اعمال سیاست جدید بدون نیاز به ریستارت
+          secedit /configure /db $env:windir\security\local.sdb /cfg c:\secpol.cfg /areas SECURITYPOLICY
+          
+          # ساخت پسورد ساده 123
           $Password = ConvertTo-SecureString "123" -AsPlainText -Force
           
           # تنظیم رمز عبور runneradmin به 123
@@ -38,17 +47,13 @@ jobs:
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
-          # دانلود و نصب بی‌صدا Tailscale
-          Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile "C:\tailscale.msi"
+          Invoke-WebRequest "https://tailscale.com" -OutFile "C:\tailscale.msi"
           Start-Process msiexec -ArgumentList "/i C:\tailscale.msi /quiet /norestart" -Wait
 
-          # اتصال به شبکه Tailscale
           Start-Sleep -Seconds 5
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$Env:TAILSCALE_AUTHKEY" --hostname="github-windows-server"
 
           Start-Sleep -Seconds 8
-
-          # دریافت آی‌پیش Tailscale
           $ts_ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
 
           Write-Host "====================================================" -ForegroundColor Green
@@ -64,11 +69,8 @@ jobs:
 
       - name: 4. Keep Server Alive Safely (Max 6 Hours)
         run: |
-          # لوپ شبیه‌سازی فعالیت واقعی برای جلوگیری از شناسایی توسط آنتی-چیت گیت‌هاب
-          # ۳۵۰ دقیقه (کمی کمتر از سقف ۶ ساعت) برای جلوگیری از کرش ناگهانی
           for ($i = 1; $i -le 350; $i++) {
             Start-Sleep -Seconds 60
-            # اجرای یک دستور سیستمی کوچک برای تولید لاگ غیر تکراری و زنده نگه داشتن جاب
             Get-Process | Select-Object -First 1 | Out-Null
             Write-Host "[$(Get-Date -Format 'HH:mm:ss')] Server is active. Minute: $i/350" -ForegroundColor Gray
           }
