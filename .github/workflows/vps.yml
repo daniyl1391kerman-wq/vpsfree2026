@@ -1,0 +1,43 @@
+name: Ultimate Developer VPS with Hardware Specs
+on: 
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install Programming & Python Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip python3-venv git curl wget build-essential libssl-dev localtunnel
+        python3 -m pip install --upgrade pip
+
+    - name: Set Custom SSH Password
+      run: |
+        # تنظیم پسورد برای یوزر runner
+        echo "runner:mysecretpass123" | sudo chpasswd
+
+    - name: Gather and Print VPS Detailed Specifications
+      run: |
+        echo "=========================================================="
+        echo "               DETAILED VPS SPECIFICATIONS                "
+        echo "=========================================================="
+        echo "Operating System: $(lsb_release -ds)"
+        echo "CPU Model:        $(lscpu | grep 'Model name' | cut -d: -f2 | xargs)"
+        echo "CPU Cores:        $(nproc) Cores"
+        echo "Total RAM:        $(free -h | grep Mem | awk '{print $2}')"
+        echo "Disk Space:       $(df -h / | awk 'NR==2 {print $2 " Total (Free: " $4 ")"}')"
+        echo "Public IP:        $(curl -s https://ipify.org || echo 'Not Found')"
+        echo "----------------------------------------------------------"
+        echo "                  SSH LOGIN CREDENTIALS                   "
+        echo "----------------------------------------------------------"
+        echo "Username:         runner"
+        echo "Password:         mysecretpass123"
+        echo "=========================================================="
+
+    - name: Launch VPS & Enable SSH Connection
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 350
