@@ -26,19 +26,12 @@ jobs:
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
-          # Download and install Tailscale silently
-          Invoke-WebRequest "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile "C:\tailscale.msi"
+          Invoke-WebRequest "https://tailscale.com" -OutFile "C:\tailscale.msi"
           Start-Process msiexec -ArgumentList "/i C:\tailscale.msi /quiet /norestart" -Wait
-
-          # Connect to Tailscale network
           Start-Sleep -Seconds 5
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$Env:TAILSCALE_AUTHKEY" --hostname="github-rdp-server"
-
           Start-Sleep -Seconds 8
-
-          # Get Tailscale IP
           $ts_ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-
           Write-Host "====================================================" -ForegroundColor Green
           Write-Host " >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
           Write-Host " Tailscale IP : $ts_ip" -ForegroundColor Yellow
@@ -47,9 +40,106 @@ jobs:
           Write-Host " >> Open mstsc and connect to: $ts_ip" -ForegroundColor Magenta
           Write-Host "====================================================" -ForegroundColor Green
 
-      - name: 4. Keep Server Alive (48 Hours)
+      - name: 4. Install Dependencies (Selenium)
         run: |
-          for ($i = 1; $i -le 2880; $i++) {
-            Start-Sleep -Seconds 60
-            Write-Host "[$i/2880] Server running..."
-          }
+          python -m pip install --upgrade pip
+          pip install selenium
+
+      - name: 5. Create Watchtime Script File
+        run: |
+          $ScriptContent = @'
+          import time
+          import random
+          from threading import Thread, Lock
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+
+          VIDEO_URL = "https://www.aparat.com/v/p18035a"
+          MAX_BROWSERS = 60 
+          WATCH_DURATION = 2700  # ۴۵ دقیقه تماشا
+
+          USER_AGENTS = [
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
+              "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          ]
+
+          active_browsers = 0
+          total_closed = 0
+          lock = Lock()
+
+          def print_status_log():
+              with lock:
+                  print(f"[آمار لایو] تعداد مرورگرهای فعال: {active_browsers} | کل واچ‌تایم‌های موفق تمام شده: {total_closed}")
+
+          def single_visitor(browser_id):
+              global active_browsers, total_closed
+              chrome_options = Options()
+              chrome_options.add_argument("--headless=new") 
+              chrome_options.add_argument("--mute-audio")    
+              chrome_options.add_argument("--disable-gpu")   
+              chrome_options.add_argument("--no-sandbox")
+              chrome_options.add_argument("--disable-dev-shm-usage")
+              chrome_options.add_argument("--log-level=3")
+              chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+              chrome_options.page_load_strategy = 'eager'
+              
+              prefs = {"profile.managed_default_content_settings.images": 2, "profile.default_content_setting_values.notifications": 2}
+              chrome_options.add_experimental_option("prefs", prefs)
+              chrome_options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")
+              
+              driver = None
+              try:
+                  driver = webdriver.Chrome(options=chrome_options)
+                  driver.set_page_load_timeout(35)
+                  driver.get(VIDEO_URL)
+                  
+                  # مدت زمان تماشای ویدیو به همراه تلورانس تصادفی کوتاه برای طبیعی بودن رفتار ربات
+                  actual_watch = WATCH_DURATION + random.randint(10, 45)
+                  time.sleep(actual_watch)
+                  driver.delete_all_cookies()
+              except Exception:
+                  pass
+              finally:
+                  if driver:
+                      try: driver.quit()
+                      except: pass
+                  with lock:
+                      active_browsers -= 1
+                      total_closed += 1
+                  print_status_log()
+
+          def main_manager():
+              global active_browsers
+              browser_count = 1
+              print("شروع اسکریپت واچ‌تایم. ساخت مرورگرها با مکث دقیق ۲ ثانیه‌ای انجام می‌شود...\n")
+              
+              while True:
+                  with lock:
+                      current_active = active_browsers
+                      
+                  if current_active < MAX_BROWSERS:
+                      with lock:
+                          active_browsers += 1
+                      
+                      # ساخت ۱ مرورگر مستقل
+                      t = Thread(target=single_visitor, args=(browser_count,))
+                      t.daemon = True
+                      t.start()
+                      
+                      browser_count += 1
+                      # مکث دقیق ۲ ثانیه‌ای طبق دستور شما قبل از رفتن به سراغ ساخت مرورگر بعدی
+                      time.sleep(2.0)
+                  else:
+                      # اگر سقف ۶۰ تا پر بود، برنامه هر ۵ ثانیه آمار را چک می‌کند تا به محض خالی شدن فضا جایگزین کند
+                      time.sleep(5)
+
+          if __name__ == "__main__":
+              main_manager()
+          '@
+          Set-Content -Path "C:\aparat_bot.py" -Value $ScriptContent -Encoding UTF8
+
+      - name: 6. Run Automate Watchtime & Live Log
+        run: |
+          python "C:\aparat_bot.py"
