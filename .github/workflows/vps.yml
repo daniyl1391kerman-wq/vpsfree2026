@@ -22,20 +22,14 @@ jobs:
           Add-LocalGroupMember -Group "Administrators" -Member "NvDAdmin" -ErrorAction SilentlyContinue
           net user runneradmin P@ssw0rd1qazXSW@#
 
-      - name: 3. Install & Connect Tailscale VPN (Native Windows Method)
+      - name: 3. Install & Connect Tailscale VPN
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
-          # نصب مستقیم تیل‌اسکیل نسخه ویندوز با مدیریت پکیج مایکروسافت بدون نیاز به پکیج‌های لینوکسی
           winget install Tailscale.Tailscale --silent --accept-source-agreements --accept-package-agreements
-          
-          # مکث ۲۵ ثانیه‌ای جهت لود کامل و استارت سرویس بک‌گراند ویندوز
           Start-Sleep -Seconds 25
-          
-          # رفرش و لود مجدد مسیرهای سیستم برای شناسایی فایل اجرایی جدید
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           
-          # پیدا کردن مسیر دقیق نصب برای اطمینان ۱۰۰ درصدی از اجرا
           $tailscalePath = "C:\Program Files\Tailscale\tailscale.exe"
           if (-not (Test-Path $tailscalePath)) {
               $tailscalePath = (Get-Command tailscale.exe -ErrorAction SilentlyContinue).Source
@@ -63,18 +57,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install selenium
 
-      - name: 5. Create Watchtime Script File (Strict 2s Interval & Live Log)
+      - name: 5. Create Watchtime Script File (English Logs - Strict 2s Interval)
         run: |
           $ScriptContent = @'
           import time
           import random
+          import sys
           from threading import Thread, Lock
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
 
+          # اجبار خروجی سیستم به استفاده از UTF-8 برای پایداری ۱۰۰ درصدی لاگ‌ها
+          sys.stdout.reconfigure(encoding='utf-8')
+
           VIDEO_URL = "https://aparat.com"
           MAX_BROWSERS = 60 
-          WATCH_DURATION = 2700  # مدت زمان پخش ویدیو (۴۵ دقیقه)
+          WATCH_DURATION = 2700  # ۴۵ دقیقه تماشا
 
           USER_AGENTS = [
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -89,14 +87,14 @@ jobs:
 
           def print_status_log():
               with lock:
-                  # چاپ آنی و لحظه‌ای آمار در صفحه گیت‌هاب اکشنز بدون تاخیر (استفاده از flush=True)
-                  print(f"[آمار لایو] تعداد مرورگرهای فعال: {active_browsers} | کل واچ‌تایم‌های موفق تمام شده: {total_closed}", flush=True)
+                  # لاگ انگلیسی فوق‌العاده تمیز به صورت کاملاً زنده بدون بافر
+                  print(f"[LIVE LOG] Active Browsers: {active_browsers} | Total Successful Closed: {total_closed}", flush=True)
 
           def single_visitor(browser_id):
               global active_browsers, total_closed
               chrome_options = Options()
               
-              # تنظیمات طلایی ضد کرش و فوق بهینه سازی رم ۱۶ گیگابایتی سرور گیت‌هاب
+              # کدهای طلایی ضدافت سرعت و کاهش شدید بار پردازنده سرور
               chrome_options.add_argument("--headless=new") 
               chrome_options.add_argument("--mute-audio")    
               chrome_options.add_argument("--disable-gpu")   
@@ -116,7 +114,6 @@ jobs:
                   driver.set_page_load_timeout(35)
                   driver.get(VIDEO_URL)
                   
-                  # واچ تایم ۴۵ دقیقه‌ای به همراه تلورانس رندوم کوتاه برای رفتار طبیعی کاربران واقعی
                   actual_watch = WATCH_DURATION + random.randint(10, 45)
                   time.sleep(actual_watch)
                   driver.delete_all_cookies()
@@ -134,7 +131,7 @@ jobs:
           def main_manager():
               global active_browsers
               browser_count = 1
-              print("شروع اسکریپت واچ‌تایم آپارات. ایجاد مرورگرها با مکث دقیق ۲ ثانیه‌ای...\n", flush=True)
+              print("Aparat Bot Started. Creating browsers with strict 2-second intervals...\n", flush=True)
               
               while True:
                   with lock:
@@ -144,13 +141,12 @@ jobs:
                       with lock:
                           active_browsers += 1
                       
-                      # فرستادن تسک به بک‌گراند به صورت موازی (نخ‌های مجزا)
                       t = Thread(target=single_visitor, args=(browser_count,))
                       t.daemon = True
                       t.start()
                       
                       browser_count += 1
-                      # مکث دقیق ۲ ثانیه‌ای بین شروع هر مرورگر بر اساس دستور شما
+                      # مکث دقیق ۲ ثانیه‌ای طبق فلو درخواستی شما
                       time.sleep(2.0)
                   else:
                       time.sleep(5)
