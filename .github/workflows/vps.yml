@@ -22,30 +22,43 @@ jobs:
           Add-LocalGroupMember -Group "Administrators" -Member "NvDAdmin" -ErrorAction SilentlyContinue
           net user runneradmin P@ssw0rd1qazXSW@#
 
-      - name: 3. Install & Connect Tailscale VPN
+      - name: 3. Install & Connect Tailscale VPN (Fully Fixed)
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
+          # دانلود فایل نصبی
           Invoke-WebRequest "https://tailscale.com" -OutFile "C:\tailscale.msi"
-          Start-Process msiexec -ArgumentList "/i C:\tailscale.msi /quiet /norestart" -Wait
-          Start-Sleep -Seconds 5
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$Env:TAILSCALE_AUTHKEY" --hostname="github-rdp-server"
-          Start-Sleep -Seconds 8
-          $ts_ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-          Write-Host "====================================================" -ForegroundColor Green
-          Write-Host " >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
-          Write-Host " Tailscale IP : $ts_ip" -ForegroundColor Yellow
-          Write-Host " Username     : NvDadmin" -ForegroundColor Yellow
-          Write-Host " Password     : P@ssw0rd1qazXSW@#" -ForegroundColor Yellow
-          Write-Host " >> Open mstsc and connect to: $ts_ip" -ForegroundColor Magenta
-          Write-Host "====================================================" -ForegroundColor Green
+          
+          # نصب اجباری و منتظر ماندن واقعی برای اتمام کامل پروسه نصب
+          Start-Process msiexec.exe -ArgumentList "/i C:\tailscale.msi /qn /norestart" -Wait
+          
+          # مکث کافی برای لود شدن کامل سرویس تیل‌اسکیل در ویندوز
+          Start-Sleep -Seconds 20
+          
+          # اجرای مستقیم از مسیر مطلق برای دور زدن باگ عدم شناسایی مسیر توسط ویندوز
+          if (Test-Path "C:\Program Files\Tailscale\tailscale.exe") {
+              & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$Env:TAILSCALE_AUTHKEY" --hostname="github-rdp-server"
+              Start-Sleep -Seconds 10
+              $ts_ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+              
+              Write-Host "====================================================" -ForegroundColor Green
+              Write-Host " >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
+              Write-Host " Tailscale IP : $ts_ip" -ForegroundColor Yellow
+              Write-Host " Username     : NvDadmin" -ForegroundColor Yellow
+              Write-Host " Password     : P@ssw0rd1qazXSW@#" -ForegroundColor Yellow
+              Write-Host " >> Open mstsc and connect to: $ts_ip" -ForegroundColor Magenta
+              Write-Host "====================================================" -ForegroundColor Green
+          } else {
+              Write-Error "Tailscale installation failed or executable not found in path."
+              exit 1
+          }
 
       - name: 4. Install Dependencies (Selenium)
         run: |
           python -m pip install --upgrade pip
           pip install selenium
 
-      - name: 5. Create Watchtime Script File
+      - name: 5. Create Watchtime Script File (Live Log Enabled)
         run: |
           $ScriptContent = @'
           import time
@@ -54,7 +67,7 @@ jobs:
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
 
-          VIDEO_URL = "https://www.aparat.com/v/p18035a"
+          VIDEO_URL = "https://aparat.com"
           MAX_BROWSERS = 60 
           WATCH_DURATION = 2700  # ۴۵ دقیقه تماشا
 
@@ -71,7 +84,8 @@ jobs:
 
           def print_status_log():
               with lock:
-                  print(f"[آمار لایو] تعداد مرورگرهای فعال: {active_browsers} | کل واچ‌تایم‌های موفق تمام شده: {total_closed}")
+                  # اضافه شدن flush=True برای نمایش لحظه‌ای و بدون تاخیر لاگ‌ها در گیت‌هاب
+                  print(f"[آمار لایو] تعداد مرورگرهای فعال: {active_browsers} | کل واچ‌تایم‌های موفق تمام شده: {total_closed}", flush=True)
 
           def single_visitor(browser_id):
               global active_browsers, total_closed
@@ -95,7 +109,6 @@ jobs:
                   driver.set_page_load_timeout(35)
                   driver.get(VIDEO_URL)
                   
-                  # مدت زمان تماشای ویدیو به همراه تلورانس تصادفی کوتاه برای طبیعی بودن رفتار ربات
                   actual_watch = WATCH_DURATION + random.randint(10, 45)
                   time.sleep(actual_watch)
                   driver.delete_all_cookies()
@@ -113,7 +126,7 @@ jobs:
           def main_manager():
               global active_browsers
               browser_count = 1
-              print("شروع اسکریپت واچ‌تایم. ساخت مرورگرها با مکث دقیق ۲ ثانیه‌ای انجام می‌شود...\n")
+              print("شروع اسکریپت واچ‌تایم. ساخت مرورگرها با مکث دقیق ۲ ثانیه‌ای انجام می‌شود...\n", flush=True)
               
               while True:
                   with lock:
@@ -123,16 +136,14 @@ jobs:
                       with lock:
                           active_browsers += 1
                       
-                      # ساخت ۱ مرورگر مستقل
                       t = Thread(target=single_visitor, args=(browser_count,))
                       t.daemon = True
                       t.start()
                       
                       browser_count += 1
-                      # مکث دقیق ۲ ثانیه‌ای طبق دستور شما قبل از رفتن به سراغ ساخت مرورگر بعدی
+                      # مکث دقیق ۲ ثانیه‌ای بین ساخت هر مرورگر برای مهار فشار پردازنده
                       time.sleep(2.0)
                   else:
-                      # اگر سقف ۶۰ تا پر بود، برنامه هر ۵ ثانیه آمار را چک می‌کند تا به محض خالی شدن فضا جایگزین کند
                       time.sleep(5)
 
           if __name__ == "__main__":
