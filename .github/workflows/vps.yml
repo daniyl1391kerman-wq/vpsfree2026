@@ -70,7 +70,7 @@ jobs:
           # اجبار خروجی سیستم به استفاده از UTF-8 برای پایداری ۱۰۰ درصدی لاگ‌ها
           sys.stdout.reconfigure(encoding='utf-8')
 
-          VIDEO_URL = "https://aparat.com"
+          VIDEO_URL = "https://www.aparat.com/v/p18035a"
           MAX_BROWSERS = 60 
           WATCH_DURATION = 2700  # ۴۵ دقیقه تماشا
 
@@ -147,7 +147,7 @@ jobs:
                       
                       browser_count += 1
                       # مکث دقیق ۲ ثانیه‌ای طبق فلو درخواستی شما
-                      time.sleep(2.0)
+                      time.sleep(1.0)
                   else:
                       time.sleep(5)
 
