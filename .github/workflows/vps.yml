@@ -70,9 +70,9 @@ jobs:
           # اجبار خروجی سیستم به استفاده از UTF-8 برای پایداری ۱۰۰ درصدی لاگ‌ها
           sys.stdout.reconfigure(encoding='utf-8')
 
-          VIDEO_URL = "https://www.aparat.com/v/p18035a"
+          VIDEO_URL = "https://www.aparat.com/v/llk1m97"
           MAX_BROWSERS = 60 
-          WATCH_DURATION = 2700  # ۴۵ دقیقه تماشا
+          WATCH_DURATION = 300  # ۴۵ دقیقه تماشا
 
           USER_AGENTS = [
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
