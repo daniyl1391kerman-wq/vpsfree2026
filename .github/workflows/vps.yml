@@ -71,7 +71,7 @@ jobs:
           sys.stdout.reconfigure(encoding='utf-8')
 
           VIDEO_URL = "https://www.aparat.com/v/llk1m97"
-          MAX_BROWSERS = 10 
+          MAX_BROWSERS = 0
           WATCH_DURATION = 300  # ۴۵ دقیقه تماشا
 
           USER_AGENTS = [
