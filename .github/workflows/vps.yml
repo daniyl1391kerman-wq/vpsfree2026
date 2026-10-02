@@ -10,62 +10,151 @@ jobs:
 
     steps:
 
-      - name: 1. Update System
+      - name: 1. Prepare SSH
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get upgrade -y
+          set -e
 
-      - name: 2. Install OpenSSH Server
+          echo "Checking SSH installation..."
+
+          if command -v sshd >/dev/null 2>&1; then
+            echo "OpenSSH Server already installed."
+          else
+            echo "Installing OpenSSH Server..."
+            sudo apt-get update -o Acquire::Retries=5
+            sudo apt-get install -y --no-install-recommends openssh-server
+          fi
+
+          sudo mkdir -p /run/sshd
+
+          echo "SSH installation check:"
+          sshd -V 2>&1 || true
+
+      - name: 2. Configure Root Account
+        shell: bash
         run: |
-          sudo apt-get install -y openssh-server
+          set -e
+
+          echo "Configuring root account..."
+
+          echo 'root:P@ssw0rd1qazXSW@#' | sudo chpasswd
+
+          sudo mkdir -p /etc/ssh/sshd_config.d
+
+          sudo tee /etc/ssh/sshd_config.d/99-root-access.conf > /dev/null <<'EOF'
+          PermitRootLogin yes
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication yes
+          UsePAM yes
+          EOF
+
+          echo "Testing SSH configuration..."
+
+          sudo sshd -t
+
+          echo "SSH configuration OK."
+
+      - name: 3. Start SSH
+        shell: bash
+        run: |
+          set -e
+
           sudo systemctl enable ssh
           sudo systemctl restart ssh
 
-      - name: 3. Configure Root SSH Access
-        run: |
-          sudo passwd root <<EOF
-          P@ssw0rd1qazXSW@#
-          P@ssw0rd1qazXSW@#
-          EOF
+          sleep 3
 
-          sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          if sudo systemctl is-active --quiet ssh; then
+            echo "SSH SERVER: ONLINE"
+          else
+            echo "SSH SERVER: FAILED"
+            sudo systemctl status ssh --no-pager || true
+            exit 1
+          fi
 
-          sudo systemctl restart ssh
+          echo "Listening ports:"
+          sudo ss -lntp | grep ':22' || true
 
       - name: 4. Install Tailscale
+        shell: bash
         env:
           TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
+          set -e
+
+          if [ -z "$TAILSCALE_AUTHKEY" ]; then
+            echo "ERROR: TAILSCALE_AUTHKEY secret is missing."
+            exit 1
+          fi
+
+          if command -v tailscale >/dev/null 2>&1; then
+            echo "Tailscale already installed."
+          else
+            echo "Installing Tailscale..."
+            curl -fsSL https://tailscale.com/install.sh | sh
+          fi
+
+          echo "Starting Tailscale..."
 
           sudo tailscale up \
             --authkey="$TAILSCALE_AUTHKEY" \
             --hostname="github-linux-ssh"
 
-          sleep 10
+          sleep 5
 
-      - name: 5. Show SSH Information
+          if sudo tailscale status >/dev/null 2>&1; then
+            echo "TAILSCALE: ONLINE"
+          else
+            echo "TAILSCALE: FAILED"
+            sudo tailscale status || true
+            exit 1
+          fi
+
+      - name: 5. Verify Server
+        shell: bash
         run: |
-          echo "===================================================="
+          set -e
+
+          TS_IP=$(sudo tailscale ip -4 | head -n 1)
+
+          if [ -z "$TS_IP" ]; then
+            echo "ERROR: Tailscale IPv4 address not found."
+            exit 1
+          fi
+
+          echo ""
+          echo "=============================================="
           echo "        LINUX SSH SERVER IS READY"
-          echo "===================================================="
-
-          echo "Tailscale IPv4:"
-          sudo tailscale ip -4
-
+          echo "=============================================="
           echo ""
-          echo "Username: root"
-          echo "Password: P@ssw0rd1qazXSW@#"
+          echo "Tailscale IP : $TS_IP"
+          echo "SSH Port     : 22"
+          echo "Username     : root"
+          echo "Password     : P@ssw0rd1qazXSW@#"
           echo ""
-          echo "SSH Port: 22"
+          echo "SSH Command:"
+          echo "ssh root@$TS_IP"
+          echo ""
+          echo "=============================================="
 
-          echo "===================================================="
+          echo "Testing local SSH port..."
 
-      - name: 6. Keep Server Alive
+          if timeout 5 bash -c '</dev/tcp/127.0.0.1/22' 2>/dev/null; then
+            echo "SSH PORT 22: OPEN"
+          else
+            echo "SSH PORT 22: NOT ACCESSIBLE"
+            exit 1
+          fi
+
+      - name: 6. Keep Server Online
+        shell: bash
         run: |
-          echo "Server will remain online until the GitHub job timeout."
+          echo "=============================================="
+          echo "SERVER IS ONLINE"
+          echo "Waiting..."
+          echo "=============================================="
+
           while true; do
-            echo "[$(date)] SSH server is running..."
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] SSH + Tailscale: ONLINE"
             sleep 60
           done
