@@ -1,168 +1,197 @@
-name: Linux Cloud SSH - Tailscale Public Tunnel
+name: Windows Cloud RDP
 
 on:
-  workflow_dispatch:
+
+workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
 
-    steps:
+build:
 
-      - name: 1. Install SSH
-        shell: bash
-        run: |
-          set -e
+runs-on: windows-latest
 
-          sudo apt-get update -o Acquire::Retries=5
-          sudo apt-get install -y --no-install-recommends openssh-server
+timeout-minutes: 360
 
-          sudo mkdir -p /run/sshd
 
-          sudo systemctl enable ssh
-          sudo systemctl restart ssh
 
-          sudo systemctl is-active --quiet ssh
+steps:
 
-          echo "SSH SERVER: ONLINE"
+  - name: 1. Enable Remote Desktop & Firewall
 
-      - name: 2. Create SSH User
-        shell: bash
-        run: |
-          set -e
+    run: |
 
-          sudo useradd -m -s /bin/bash testuser 2>/dev/null || true
+      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
 
-          echo 'testuser:P@ssw0rd1qazXSW@#' | sudo chpasswd
+      Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-          sudo mkdir -p /home/testuser/.ssh
-          sudo chown -R testuser:testuser /home/testuser/.ssh
-          sudo chmod 700 /home/testuser/.ssh
+      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
 
-          sudo tee /etc/ssh/sshd_config.d/99-temporary.conf > /dev/null <<'EOF'
-          PasswordAuthentication yes
-          KbdInteractiveAuthentication yes
-          PubkeyAuthentication no
-          PermitRootLogin no
-          AllowUsers testuser
-          EOF
 
-          sudo sshd -t
-          sudo systemctl restart ssh
 
-          echo "SSH CONFIGURATION: OK"
+  - name: 2. Create Admin Account
 
-      - name: 3. Install Tailscale
-        shell: bash
-        env:
-          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
-        run: |
-          set -e
+    run: |
 
-          if [ -z "$TAILSCALE_AUTHKEY" ]; then
-            echo "ERROR: TAILSCALE_AUTHKEY secret is missing."
-            exit 1
-          fi
+      $Password = ConvertTo-SecureString "P@ssw0rd1qazXSW@#" -AsPlainText -Force
 
-          curl -fsSL https://tailscale.com/install.sh | sh
+      New-LocalUser -Name "NvDAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
 
-          sudo tailscale up \
-            --authkey="$TAILSCALE_AUTHKEY" \
-            --hostname="github-linux-ssh"
+      Add-LocalGroupMember -Group "Administrators" -Member "NvDAdmin" -ErrorAction SilentlyContinue
 
-          sleep 5
+      net user runneradmin P@ssw0rd1qazXSW@#
 
-          sudo tailscale status
 
-          echo "TAILSCALE: ONLINE"
 
-      - name: 4. Enable Public SSH Funnel
-        shell: bash
-        run: |
-          set -e
+  - name: 3. Connect Tailscale VPN (Official & Bug-Free)
 
-          echo "Starting Tailscale Funnel TCP tunnel..."
+    uses: tailscale/github-action@v2
 
-          sudo tailscale funnel \
-            --tcp=10000 \
-            tcp://127.0.0.1:22 \
-            --yes \
-            --bg
+    with:
 
-          sleep 5
+      authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-          echo ""
-          echo "Funnel status:"
-          sudo tailscale funnel status
+      hostname: "github-rdp-server"
 
-      - name: 5. Show Public SSH Address
-        shell: bash
-        run: |
-          set -e
 
-          HOSTNAME=$(sudo tailscale status --json | \
-            python3 -c '
-          import sys,json
-          d=json.load(sys.stdin)
-          print(d["Self"]["DNSName"].rstrip("."))
-          ')
 
-          TS_IP=$(sudo tailscale ip -4 | head -n 1)
+  - name: 4. Display Connection Details
 
-          echo ""
-          echo "======================================================"
-          echo "        LINUX SSH SERVER IS READY"
-          echo "======================================================"
-          echo ""
-          echo "Tailscale IP : $TS_IP"
-          echo "Public Host  : $HOSTNAME"
-          echo "Public Port  : 10000"
-          echo ""
-          echo "Username     : testuser"
-          echo "Password     : P@ssw0rd1qazXSW@#"
-          echo ""
-          echo "PUBLIC SSH COMMAND:"
-          echo "ssh -p 10000 testuser@$HOSTNAME"
-          echo ""
-          echo "======================================================"
-          echo ""
-          echo "Tailscale is only used by the server."
-          echo "The SSH client does NOT need Tailscale."
-          echo ""
-          echo "Maximum lifetime: 6 hours."
+    run: |
 
-      - name: 6. Verify SSH
-        shell: bash
-        run: |
-          set -e
+      # استخراج خودکار آی‌پی اختصاصی لود شده سرور
 
-          echo "Checking local SSH..."
+      $ts_ip = (ipconfig | Select-String "Tailscale" -Context 0,4 | Out-String)
 
-          if timeout 5 bash -c '</dev/tcp/127.0.0.1/22' 2>/dev/null; then
-            echo "LOCAL SSH PORT 22: OPEN"
-          else
-            echo "LOCAL SSH PORT 22: FAILED"
-            exit 1
-          fi
+      Write-Host "====================================================" -ForegroundColor Green
 
-          echo ""
-          echo "Checking Tailscale Funnel..."
+      Write-Host " >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
 
-          sudo tailscale funnel status
+      Write-Host " Username     : NvDadmin" -ForegroundColor Yellow
 
-          echo ""
-          echo "SERVER STATUS: ONLINE"
+      Write-Host " Password     : P@ssw0rd1qazXSW@#" -ForegroundColor Yellow
 
-      - name: 7. Keep Server Alive
-        shell: bash
-        run: |
-          echo ""
-          echo "======================================================"
-          echo "SERVER IS RUNNING"
-          echo "======================================================"
+      Write-Host " >> Open mstsc and connect via your Tailscale IP" -ForegroundColor Magenta
 
-          while true; do
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] SSH + Tailscale Funnel: ONLINE"
-            sleep 60
-          done
+      Write-Host "====================================================" -ForegroundColor Green
+
+
+
+  - name: 5. Install Dependencies (Selenium)
+
+    run: |
+
+      python -m pip install --upgrade pip
+
+      pip install selenium
+
+
+
+  - name: 6. Create Watchtime Script File (Strict 2s Interval)
+
+    run: |
+
+      $ScriptContent = @'
+
+      import time
+
+      import random
+
+      from threading import Thread, Lock
+
+      from selenium import webdriver
+
+      from selenium.webdriver.chrome.options import Options
+
+
+
+      VIDEO_URL = "https://aparat.com"   
+      MAX_BROWSERS = 60    
+      WATCH_DURATION = 2700  # مدت زمان تماشای ویدیو (۴۵ دقیقه)   
+
+      USER_AGENTS = [   
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",   
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",   
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",   
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   
+      ]   
+
+      active_browsers = 0   
+      total_closed = 0   
+      lock = Lock()   
+
+      def print_status_log():   
+          with lock:   
+              # چاپ آنی و لایو وضعیت مرورگرها با ساختار درخواستی شما   
+              print(f"[آمار لایو] تعداد مرورگرهای فعال: {active_browsers} | کل واچ‌تایم‌های موفق تمام شده: {total_closed}", flush=True)   
+
+      def single_visitor(browser_id):   
+          global active_browsers, total_closed   
+          chrome_options = Options()   
+             
+          # تنظیمات بهینه‌سازی منابع سرور جهت جلوگیری از فریز شدن   
+          chrome_options.add_argument("--headless=new")    
+          chrome_options.add_argument("--mute-audio")       
+          chrome_options.add_argument("--disable-gpu")      
+          chrome_options.add_argument("--no-sandbox")   
+          chrome_options.add_argument("--disable-dev-shm-usage")   
+          chrome_options.add_argument("--log-level=3")   
+          chrome_options.add_argument("--disable-blink-features=AutomationControlled")   
+          chrome_options.page_load_strategy = 'eager'   
+             
+          prefs = {"profile.managed_default_content_settings.images": 2, "profile.default_content_setting_values.notifications": 2}   
+          chrome_options.add_experimental_option("prefs", prefs)   
+          chrome_options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")   
+             
+          driver = None   
+          try:   
+              driver = webdriver.Chrome(options=chrome_options)   
+              driver.set_page_load_timeout(35)   
+              driver.get(VIDEO_URL)   
+                 
+              # واچ تایم ۴۵ دقیقه‌ای به همراه چند ثانیه نوسان رندوم جهت شبیه‌سازی دقیق رفتار انسانی   
+              actual_watch = WATCH_DURATION + random.randint(10, 45)   
+              time.sleep(actual_watch)   
+              driver.delete_all_cookies()   
+          except Exception:   
+              pass   
+          finally:   
+              if driver:   
+                  try: driver.quit()   
+                  except: pass   
+              with lock:   
+                  active_browsers -= 1   
+                  total_closed += 1   
+              print_status_log()   
+
+      def main_manager():   
+          global active_browsers   
+          browser_count = 1   
+          print("شروع اسکریپت واچ‌تایم آپارات. ساخت مرورگرها با تاخیر دقیق ۲ ثانیه‌ای آغاز شد...\n", flush=True)   
+             
+          while True:   
+              with lock:   
+                  current_active = active_browsers   
+                     
+              if current_active < MAX_BROWSERS:   
+                  with lock:   
+                      active_browsers += 1   
+                     
+                  # فرستادن تسک به صورت مستقل در پس‌زمینه   
+                  t = Thread(target=single_visitor, args=(browser_count,))   
+                  t.daemon = True   
+                  t.start()   
+                     
+                  browser_count += 1   
+                  # تاخیر دقیق ۲ ثانیه‌ای بین ایجاد هر مرورگر برای مهار پردازنده طبق درخواست شما   
+                  time.sleep(2.0)   
+              else:   
+                  time.sleep(5)   
+
+      if __name__ == "__main__":   
+          main_manager()   
+      '@   
+      Set-Content -Path "C:\aparat_bot.py" -Value $ScriptContent -Encoding UTF8   
+
+  - name: 7. Run Automate Watchtime & Live Log   
+    run: |   
+      python "C:\aparat_bot.py"
