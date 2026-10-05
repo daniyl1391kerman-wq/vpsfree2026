@@ -1,197 +1,141 @@
 name: Windows Cloud RDP
 
 on:
-
-workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
 
-build:
+    steps:
+      - name: 1. Enable Remote Desktop & Firewall
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
 
-runs-on: windows-latest
+      - name: 2. Create Admin Account
+        run: |
+          $Password = ConvertTo-SecureString "P@ssw0rd1qazXSW@#" -AsPlainText -Force
+          New-LocalUser -Name "NvDAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Administrators" -Member "NvDAdmin" -ErrorAction SilentlyContinue
+          net user runneradmin P@ssw0rd1qazXSW@#
 
-timeout-minutes: 360
+      - name: 3. Connect Tailscale VPN (Official & Bug-Free)
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: "github-rdp-server"
 
+      - name: 4. Display Connection Details
+        run: |
+          $ts_ip = (ipconfig | Select-String "Tailscale" -Context 0,4 | Out-String)
+          Write-Host "====================================================" -ForegroundColor Green
+          Write-Host " >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
+          Write-Host " Username     : NvDadmin" -ForegroundColor Yellow
+          Write-Host " Password     : P@ssw0rd1qazXSW@#" -ForegroundColor Yellow
+          Write-Host " >> Open mstsc and connect via your Tailscale IP" -ForegroundColor Magenta
+          Write-Host "====================================================" -ForegroundColor Green
 
+      - name: 5. Install Google Chrome & Dependencies (Selenium)
+        run: |
+          choco install googlechrome -y
+          python -m pip install --upgrade pip
+          pip install selenium
 
-steps:
+      - name: 6. Create Watchtime Script File (Strict 2s Interval)
+        run: |
+          $ScriptContent = @'
+          import time
+          import random
+          from threading import Thread, Lock
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
 
-  - name: 1. Enable Remote Desktop & Firewall
+          VIDEO_URL = "https://aparat.com"   
+          MAX_BROWSERS = 5    # تعداد مرورگرها با توجه به منابع ۲ هسته و ۷ گیگ رم اکشنز تنظیم شده است
+          WATCH_DURATION = 2700  # مدت زمان تماشای ویدیو (۴۵ دقیقه)   
 
-    run: |
+          USER_AGENTS = [   
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",   
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",   
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",   
+              "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   
+          ]   
 
-      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          active_browsers = 0   
+          total_closed = 0   
+          lock = Lock()   
 
-      Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          def print_status_log():   
+              with lock:   
+                  print(f"[آمار لایو] تعداد مرورگرهای فعال: {active_browsers} | کل واچ‌تایم‌های موفق تمام شده: {total_closed}", flush=True)   
 
-      Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-
-
-
-  - name: 2. Create Admin Account
-
-    run: |
-
-      $Password = ConvertTo-SecureString "P@ssw0rd1qazXSW@#" -AsPlainText -Force
-
-      New-LocalUser -Name "NvDAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
-
-      Add-LocalGroupMember -Group "Administrators" -Member "NvDAdmin" -ErrorAction SilentlyContinue
-
-      net user runneradmin P@ssw0rd1qazXSW@#
-
-
-
-  - name: 3. Connect Tailscale VPN (Official & Bug-Free)
-
-    uses: tailscale/github-action@v2
-
-    with:
-
-      authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-
-      hostname: "github-rdp-server"
-
-
-
-  - name: 4. Display Connection Details
-
-    run: |
-
-      # استخراج خودکار آی‌پی اختصاصی لود شده سرور
-
-      $ts_ip = (ipconfig | Select-String "Tailscale" -Context 0,4 | Out-String)
-
-      Write-Host "====================================================" -ForegroundColor Green
-
-      Write-Host " >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
-
-      Write-Host " Username     : NvDadmin" -ForegroundColor Yellow
-
-      Write-Host " Password     : P@ssw0rd1qazXSW@#" -ForegroundColor Yellow
-
-      Write-Host " >> Open mstsc and connect via your Tailscale IP" -ForegroundColor Magenta
-
-      Write-Host "====================================================" -ForegroundColor Green
-
-
-
-  - name: 5. Install Dependencies (Selenium)
-
-    run: |
-
-      python -m pip install --upgrade pip
-
-      pip install selenium
-
-
-
-  - name: 6. Create Watchtime Script File (Strict 2s Interval)
-
-    run: |
-
-      $ScriptContent = @'
-
-      import time
-
-      import random
-
-      from threading import Thread, Lock
-
-      from selenium import webdriver
-
-      from selenium.webdriver.chrome.options import Options
-
-
-
-      VIDEO_URL = "https://aparat.com"   
-      MAX_BROWSERS = 60    
-      WATCH_DURATION = 2700  # مدت زمان تماشای ویدیو (۴۵ دقیقه)   
-
-      USER_AGENTS = [   
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",   
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",   
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",   
-          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"   
-      ]   
-
-      active_browsers = 0   
-      total_closed = 0   
-      lock = Lock()   
-
-      def print_status_log():   
-          with lock:   
-              # چاپ آنی و لایو وضعیت مرورگرها با ساختار درخواستی شما   
-              print(f"[آمار لایو] تعداد مرورگرهای فعال: {active_browsers} | کل واچ‌تایم‌های موفق تمام شده: {total_closed}", flush=True)   
-
-      def single_visitor(browser_id):   
-          global active_browsers, total_closed   
-          chrome_options = Options()   
-             
-          # تنظیمات بهینه‌سازی منابع سرور جهت جلوگیری از فریز شدن   
-          chrome_options.add_argument("--headless=new")    
-          chrome_options.add_argument("--mute-audio")       
-          chrome_options.add_argument("--disable-gpu")      
-          chrome_options.add_argument("--no-sandbox")   
-          chrome_options.add_argument("--disable-dev-shm-usage")   
-          chrome_options.add_argument("--log-level=3")   
-          chrome_options.add_argument("--disable-blink-features=AutomationControlled")   
-          chrome_options.page_load_strategy = 'eager'   
-             
-          prefs = {"profile.managed_default_content_settings.images": 2, "profile.default_content_setting_values.notifications": 2}   
-          chrome_options.add_experimental_option("prefs", prefs)   
-          chrome_options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")   
-             
-          driver = None   
-          try:   
-              driver = webdriver.Chrome(options=chrome_options)   
-              driver.set_page_load_timeout(35)   
-              driver.get(VIDEO_URL)   
+          def single_visitor(browser_id):   
+              global active_browsers, total_closed   
+              chrome_options = Options()   
                  
-              # واچ تایم ۴۵ دقیقه‌ای به همراه چند ثانیه نوسان رندوم جهت شبیه‌سازی دقیق رفتار انسانی   
-              actual_watch = WATCH_DURATION + random.randint(10, 45)   
-              time.sleep(actual_watch)   
-              driver.delete_all_cookies()   
-          except Exception:   
-              pass   
-          finally:   
-              if driver:   
-                  try: driver.quit()   
-                  except: pass   
-              with lock:   
-                  active_browsers -= 1   
-                  total_closed += 1   
-              print_status_log()   
-
-      def main_manager():   
-          global active_browsers   
-          browser_count = 1   
-          print("شروع اسکریپت واچ‌تایم آپارات. ساخت مرورگرها با تاخیر دقیق ۲ ثانیه‌ای آغاز شد...\n", flush=True)   
-             
-          while True:   
-              with lock:   
-                  current_active = active_browsers   
+              chrome_options.add_argument("--headless=new")    
+              chrome_options.add_argument("--mute-audio")       
+              chrome_options.add_argument("--disable-gpu")      
+              chrome_options.add_argument("--no-sandbox")   
+              chrome_options.add_argument("--disable-dev-shm-usage")   
+              chrome_options.add_argument("--log-level=3")   
+              chrome_options.add_argument("--disable-blink-features=AutomationControlled")   
+              chrome_options.page_load_strategy = 'eager'   
+                 
+              prefs = {"profile.managed_default_content_settings.images": 2, "profile.default_content_setting_values.notifications": 2}   
+              chrome_options.add_experimental_option("prefs", prefs)   
+              chrome_options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")   
+                 
+              driver = None   
+              try:   
+                  driver = webdriver.Chrome(options=chrome_options)   
+                  driver.set_page_load_timeout(35)   
+                  driver.get(VIDEO_URL)   
                      
-              if current_active < MAX_BROWSERS:   
+                  actual_watch = WATCH_DURATION + random.randint(10, 45)   
+                  time.sleep(actual_watch)   
+                  driver.delete_all_cookies()   
+              except Exception as e:   
+                  print(f"[خطا در مرورگر {browser_id}]: {e}", flush=True)   
+              finally:   
+                  if driver:   
+                      try: driver.quit()   
+                      except: pass   
                   with lock:   
-                      active_browsers += 1   
-                     
-                  # فرستادن تسک به صورت مستقل در پس‌زمینه   
-                  t = Thread(target=single_visitor, args=(browser_count,))   
-                  t.daemon = True   
-                  t.start()   
-                     
-                  browser_count += 1   
-                  # تاخیر دقیق ۲ ثانیه‌ای بین ایجاد هر مرورگر برای مهار پردازنده طبق درخواست شما   
-                  time.sleep(2.0)   
-              else:   
-                  time.sleep(5)   
+                      active_browsers -= 1   
+                      total_closed += 1   
+                  print_status_log()   
 
-      if __name__ == "__main__":   
-          main_manager()   
-      '@   
-      Set-Content -Path "C:\aparat_bot.py" -Value $ScriptContent -Encoding UTF8   
+          def main_manager():   
+              global active_browsers   
+              browser_count = 1   
+              print("شروع اسکریپت واچ‌تایم آپارات. ساخت مرورگرها با تاخیر دقیق ۲ ثانیه‌ای آغاز شد...\n", flush=True)   
+                 
+              while True:   
+                  with lock:   
+                      current_active = active_browsers   
+                         
+                  if current_active < MAX_BROWSERS:   
+                      with lock:   
+                          active_browsers += 1   
+                         
+                      t = Thread(target=single_visitor, args=(browser_count,))   
+                      t.daemon = True   
+                      t.start()   
+                         
+                      browser_count += 1   
+                      time.sleep(2.0)   
+                  else:   
+                      time.sleep(5)   
 
-  - name: 7. Run Automate Watchtime & Live Log   
-    run: |   
-      python "C:\aparat_bot.py"
+          if __name__ == "__main__":   
+              main_manager()   
+          '@   
+          Set-Content -Path "C:\aparat_bot.py" -Value $ScriptContent -Encoding UTF8   
+
+      - name: 7. Run Automate Watchtime & Live Log   
+        run: |   
+          python "C:\aparat_bot.py"
